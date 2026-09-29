@@ -69,8 +69,9 @@ export default function MicrophonePanel({ onLevelChange }) {
     startMicrophone, stopMicrophone, setGain, isActive, isRequesting,
   } = useMicrophone();
 
-  // Sensitivity slider — default 22 for built-in, 8 for external
-  const [sensitivity, setSensitivity] = useState(22);
+  // Sensitivity slider — default 1.0 (no gain). rmsToDisplay now handles the full
+  // dynamic range without amplification. Users can nudge up to ~3 if their mic is quiet.
+  const [sensitivity, setSensitivity] = useState(1.0);
 
   const location = locations.find(l => l.locationId === selectedLocationId);
   const warnAt   = location?.warningThreshold  || 41;
@@ -81,8 +82,8 @@ export default function MicrophonePanel({ onLevelChange }) {
 
   // When mic device type is detected, set default sensitivity
   useEffect(() => {
-    if (micDevice === 'external') setSensitivity(8);
-    else if (micDevice === 'builtin') setSensitivity(22);
+    if (micDevice === 'external') setSensitivity(1.5);
+    else if (micDevice === 'builtin') setSensitivity(1.0);
   }, [micDevice]);
 
   // Adjust gain in real time when slider moves
@@ -186,14 +187,14 @@ export default function MicrophonePanel({ onLevelChange }) {
               <span className="text-xs text-slate-400 font-mono">{sensitivity}×</span>
             </div>
             <input
-              type="range" min={1} max={50} step={1}
+              type="range" min={0.5} max={10} step={0.5}
               value={sensitivity}
               onChange={e => handleSensitivity(Number(e.target.value))}
               className="w-full accent-teal-500 h-1.5 cursor-pointer"
             />
             <div className="flex justify-between text-xs text-slate-300 mt-0.5">
-              <span>Low (earbuds)</span>
-              <span>High (built-in mic)</span>
+              <span>0.5× (loud mic)</span>
+              <span>10× (very quiet mic)</span>
             </div>
             {micLevel === 0 && (
               <p className="text-xs text-amber-600 font-semibold mt-1 text-center">
@@ -220,14 +221,14 @@ export default function MicrophonePanel({ onLevelChange }) {
             <span className="text-xs text-slate-400 font-mono">{sensitivity}×</span>
           </div>
           <input
-            type="range" min={1} max={50} step={1}
+            type="range" min={0.5} max={10} step={0.5}
             value={sensitivity}
             onChange={e => setSensitivity(Number(e.target.value))}
             className="w-full accent-teal-500 h-1.5 cursor-pointer"
           />
           <div className="flex justify-between text-xs text-slate-300">
-            <span>Earbuds / External</span>
-            <span>Built-in mic</span>
+            <span>0.5× (loud mic)</span>
+            <span>10× (very quiet mic)</span>
           </div>
         </div>
       )}

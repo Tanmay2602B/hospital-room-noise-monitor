@@ -10,17 +10,25 @@
 
 import { useState, useRef, useCallback, useEffect } from 'react';
 
-// ── dBFS → relative display level (0–100) ────────────────────────────────────
-// Maps a dBFS range suited to post-gain mic signals.
-// After gain boost, a built-in mic signal lands in approximately [−45, −5] dBFS.
-// An earbud/external mic with lower gain lands similarly after auto-gain adjustment.
+// ── RMS → relative display level (0–100) ─────────────────────────────────────
+// Maps raw (pre-gain) RMS amplitude from the Web Audio API to a 0–100 display
+// range calibrated for typical laptop/phone built-in microphones.
+//
+// Typical built-in mic RMS without gain:
+//   Very quiet room  →  ~0.00003–0.0002   (-90 to -74 dBFS)
+//   Normal speech    →  ~0.003–0.03        (-50 to -30 dBFS)
+//   Loud / shouting  →  ~0.05–0.3          (-26 to -10 dBFS)
+//
+// We map the dBFS window [-80, -10] linearly to [0, 100].
+// This lets the full 0–100 range represent audible silence → very loud,
+// without needing any gain amplification to saturate the meter.
 function rmsToDisplay(rms) {
-  if (!rms || rms < 0.000001) return 0;
+  if (!rms || rms < 0.0000001) return 0;
   const dbFS = 20 * Math.log10(rms);
-  const MIN  = -52;
-  const MAX  = -3;
+  const MIN  = -80;   // near-silence floor
+  const MAX  = -10;   // very loud ceiling — plenty of headroom before clipping
   const pct  = (Math.max(MIN, Math.min(MAX, dbFS)) - MIN) / (MAX - MIN);
-  return Math.round(5 + pct * 93);
+  return Math.round(pct * 100);
 }
 
 export function useMicrophone() {
@@ -40,7 +48,7 @@ export function useMicrophone() {
   const animRef     = useRef(null);
   const smoothRef   = useRef(0);
   const callbackRef = useRef(null);
-  const gainValRef  = useRef(22); // current gain value
+  const gainValRef  = useRef(1); // current gain value (1 = no amplification)
 
   // ── Enumerate available microphones ─────────────────────────────────────────
   const refreshDevices = useCallback(async () => {
@@ -124,8 +132,9 @@ export function useMicrophone() {
       const gain     = ctx.createGain();
       const analyser = ctx.createAnalyser();
 
-      // Auto-set gain: built-in mics need more boost than external
-      const autoGain      = isExternal ? 8 : 22;
+      // Auto-set gain: 1.0 = raw signal (rmsToDisplay handles full dynamic range without amplification).
+      // Slight boost available for users with very quiet mics via the sensitivity slider.
+      const autoGain      = isExternal ? 1.5 : 1.0;
       const startingGain  = gainOverride ?? gainValRef.current ?? autoGain;
       gain.gain.value     = startingGain;
       gainValRef.current  = startingGain;
@@ -157,11 +166,11 @@ export function useMicrophone() {
         const rms = Math.sqrt(sum / buf.length);
         const raw = rmsToDisplay(rms);
 
-        // VU-meter: fast attack, slow release
+        // VU-meter: moderate attack, moderate release — tracks real noise without over-shooting
         const prev = smoothRef.current;
         smoothRef.current = raw > prev
-          ? prev + (raw - prev) * 0.60
-          : prev + (raw - prev) * 0.15;
+          ? prev + (raw - prev) * 0.35   // attack — responsive but not jumpy
+          : prev + (raw - prev) * 0.12;  // release — smooth falloff
 
         const display = Math.min(100, Math.max(0, Math.round(smoothRef.current)));
 
@@ -194,7 +203,7 @@ export function useMicrophone() {
 
   // ── Adjust gain in real time without restarting ──────────────────────────────
   const setGain = useCallback((value) => {
-    const clamped = Math.max(1, Math.min(50, value));
+    const clamped = Math.max(0.5, Math.min(10, value)); // 0.5–10× range; >3 risks clipping
     gainValRef.current = clamped;
     if (gainRef.current) gainRef.current.gain.value = clamped;
   }, []);
