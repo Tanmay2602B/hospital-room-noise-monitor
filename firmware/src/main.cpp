@@ -40,28 +40,29 @@
 // Hardware
 static const uint8_t  SENSOR_PIN          = A0;
 
-// Sampling
-static const uint8_t  SAMPLE_COUNT        = 32;    // readings per window
-static const uint32_t UPDATE_INTERVAL_MS  = 500UL; // ms between output lines
+// Sampling – 32 readings per 500ms window (~15ms apart)
+static const uint8_t  SAMPLE_COUNT        = 32;
+static const uint32_t UPDATE_INTERVAL_MS  = 500UL;
 
-// Amplification  (displayValue = peak_to_peak * AMPLIFICATION_FACTOR)
-// Increase if your sensor reads very low values even in a noisy room.
-// A value of 1.0 means no amplification.
-// Typical range: 1.5 – 6.0 for Grove Loudness Sensor.
-static const float    AMPLIFICATION_FACTOR = 3.0f;
+// Amplification
+// Grove Loudness Sensor output is small – typical peak-to-peak in a
+// normal room is only 5-30 ADC counts even for speech.
+// AMPLIFICATION_FACTOR scales that up so the dashboard shows
+// meaningful 0-100 values.
+//   25.0 → quiet=3-5,  normal speech=30-45,  loud clap=80-100
+// Increase if values still look too low; decrease if always maxed.
+static const float    AMPLIFICATION_FACTOR = 25.0f;
 
-// EMA smoothing applied to the peak-to-peak value (0.0–1.0)
-// Higher = more responsive but noisier.
-// Lower  = smoother but slower to react.
-static const float    EMA_ALPHA            = 0.35f;
+// EMA smoothing on the amplified peak-to-peak value
+// 0.40 = responsive to transients while suppressing single-sample spikes
+static const float    EMA_ALPHA            = 0.40f;
 
 // Status thresholds – applied to displayValue (0–1023)
-// Tune these after you observe your typical displayValue range.
-static const int      WARNING_THRESHOLD   = 80;   // displayValue
-static const int      HIGH_THRESHOLD      = 200;  // displayValue
+// With AMPLIFICATION=25: 250 ≈ 24% on dashboard, 550 ≈ 54%
+static const int      WARNING_THRESHOLD   = 250;  // displayValue
+static const int      HIGH_THRESHOLD      = 550;  // displayValue
 
-// Hysteresis: how many consecutive windows must agree before
-// committing a new status. Prevents rapid flickering.
+// Hysteresis: consecutive windows needed to confirm a status change
 static const uint8_t  STABLE_COUNT        = 2;
 
 // =========================================================
