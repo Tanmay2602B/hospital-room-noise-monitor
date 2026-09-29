@@ -12,8 +12,8 @@ export const DEMO_LOCATIONS = [
     criticalThreshold: 61,
     monitoringStatus: 'active',
     assignedDeviceId: 'ESP32_ROOM_101',
-    currentNoise: 38,
-    lastUpdated: new Date(),
+    currentNoise: null,
+    lastUpdated: null,
   },
   {
     locationId: 'ROOM_102',
@@ -24,8 +24,8 @@ export const DEMO_LOCATIONS = [
     criticalThreshold: 61,
     monitoringStatus: 'active',
     assignedDeviceId: 'ESP32_ROOM_102',
-    currentNoise: 54,
-    lastUpdated: new Date(),
+    currentNoise: null,
+    lastUpdated: null,
   },
   {
     locationId: 'ICU_01',

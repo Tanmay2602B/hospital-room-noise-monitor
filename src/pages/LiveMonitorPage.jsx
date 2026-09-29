@@ -1,16 +1,16 @@
 // ─────────────────────────────────────────────────────────────────────────────
 // Live Monitor Page — Primary noise monitoring interface
-// Supports: Built-in mic, External mic, Simulation demo
+// Sources: Grove Loudness Sensor (Arduino), Browser Mic, Simulation
 //
-// DISCLAIMER: Relative noise level (0–100). NOT calibrated dB(A).
-// Accuracy depends on device microphone hardware.
+// PRIMARY SOURCE: Grove Loudness Sensor via Arduino UNO → serial-bridge.js
+//   → relay-server.js → WebSocket → Dashboard
 // ─────────────────────────────────────────────────────────────────────────────
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   Mic, MicOff, Square, Maximize2, Radio, AlertTriangle,
   Info, SlidersHorizontal, Cpu, CheckCircle, Zap, RefreshCw,
-  Volume2, Clock, Activity
+  Volume2, Clock, Activity, Wifi, WifiOff, Waves
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useApp } from '../contexts/AppContext';
@@ -125,14 +125,16 @@ function StatusRow({ status, noiseLevel, warnAt, critAt }) {
 // Main page
 // ═════════════════════════════════════════════════════════════════════════════
 const SOURCE_TABS = [
-  { key: 'microphone', label: 'Microphone', icon: Mic,  desc: 'Your device microphone' },
-  { key: 'simulation', label: 'Simulation', icon: Zap,  desc: 'Demo mode — no hardware' },
+  { key: 'arduino',    label: 'Grove Sensor', icon: Waves, desc: 'Arduino UNO + Grove Loudness Sensor' },
+  { key: 'microphone', label: 'Browser Mic',  icon: Mic,   desc: 'Your device microphone' },
+  { key: 'simulation', label: 'Simulation',   icon: Zap,   desc: 'Demo mode — no hardware' },
 ];
 
 export default function LiveMonitorPage() {
   const {
     locations, selectedLocationId, setSelectedLocationId,
     readingHistory, settings, simMode, stopSimulation, ingestReading,
+    relayConnected,
   } = useApp();
   const navigate = useNavigate();
 
@@ -143,7 +145,7 @@ export default function LiveMonitorPage() {
     isActive, isRequesting, isError,
   } = useMicrophone();
 
-  const [sourceTab,   setSourceTab]   = useState('microphone');
+  const [sourceTab,   setSourceTab]   = useState('arduino');
   const [sensitivity, setSensitivity] = useState(22);
   const [simScenario, setSimScenario] = useState('random');
   const simRef = useRef(null);
@@ -206,13 +208,20 @@ export default function LiveMonitorPage() {
   const history     = readingHistory[selectedLocationId] || [];
   const stale       = secondsSince(location?.lastUpdated) > settings.staleDataTimeoutSeconds;
 
-  // Display level: prefer live mic, then history
+  // Display level:
+  //   arduino tab → always use location.currentNoise (fed by relay WebSocket)
+  //   microphone tab → prefer live mic level
+  //   simulation tab → use location.currentNoise (fed by sim interval)
+  const arduinoActive = sourceTab === 'arduino' && relayConnected;
   const noiseLevel = isActive
     ? micLevel
     : (!stale && location?.currentNoise !== null && location?.currentNoise !== undefined
       ? location.currentNoise : null);
 
-  const dataSource = isActive ? 'microphone' : (simRunning ? 'simulation' : null);
+  const dataSource = arduinoActive ? 'arduino'
+    : isActive ? 'microphone'
+    : simRunning ? 'simulation'
+    : null;
   const warnAt     = location?.warningThreshold  || 41;
   const critAt     = location?.criticalThreshold || 61;
   const { status } = getNoiseStatus(noiseLevel, warnAt, critAt);
@@ -238,11 +247,14 @@ export default function LiveMonitorPage() {
           {/* Source indicator pill */}
           {dataSource && (
             <span className={`hidden sm:flex items-center gap-1.5 text-xs font-bold px-3 py-1.5 rounded-full border ${
-              dataSource === 'microphone' ? 'bg-teal-50 text-teal-700 border-teal-200'
+              dataSource === 'arduino'     ? 'bg-teal-50 text-teal-700 border-teal-200'
+              : dataSource === 'microphone' ? 'bg-sky-50 text-sky-700 border-sky-200'
               : 'bg-purple-50 text-purple-700 border-purple-200'
             }`}>
               <span className="w-1.5 h-1.5 rounded-full live-dot bg-current" />
-              {dataSource === 'microphone' ? '🎤 MIC LIVE' : '⚡ SIMULATION'}
+              {dataSource === 'arduino' ? '🔌 SENSOR LIVE'
+                : dataSource === 'microphone' ? '🎤 MIC LIVE'
+                : '⚡ SIMULATION'}
             </span>
           )}
           <button
@@ -303,8 +315,33 @@ export default function LiveMonitorPage() {
               )}
             </div>
 
+            {/* Arduino sensor live strip */}
+            {arduinoActive && noiseLevel !== null && (
+              <div className={`p-3 rounded-xl mb-4 border ${
+                status === 'CRITICAL' ? 'bg-red-50 border-red-200'
+                : status === 'WARNING' ? 'bg-amber-50 border-amber-200'
+                : 'bg-teal-50 border-teal-200'
+              }`}>
+                <div className="flex items-center gap-3">
+                  <Waves className={`w-5 h-5 shrink-0 ${colors.text}`} />
+                  <WaveformBars active={true} level={noiseLevel || 0} />
+                  <div className="ml-auto text-right">
+                    <p className={`text-4xl font-black leading-none ${colors.text}`}>{noiseLevel ?? 0}</p>
+                    <p className="text-xs text-slate-500 font-semibold">Noise Level</p>
+                  </div>
+                  <div className="flex flex-col items-center">
+                    <span className="w-2 h-2 rounded-full bg-teal-500 live-dot" />
+                    <span className="text-xs font-bold text-teal-700 mt-0.5">LIVE</span>
+                  </div>
+                </div>
+                <span className="inline-flex items-center gap-1 text-xs font-semibold px-2 py-0.5 rounded-full bg-teal-100 text-teal-700 mt-2">
+                  <Cpu className="w-3 h-3" /> Arduino UNO · Grove Loudness Sensor · A0
+                </span>
+              </div>
+            )}
+
             {/* Mic active strip */}
-            {isActive && (
+            {isActive && sourceTab === 'microphone' && (
               <div className={`p-3 rounded-xl mb-4 border ${
                 status === 'CRITICAL' ? 'bg-red-50 border-red-200'
                 : status === 'WARNING' ? 'bg-amber-50 border-amber-200'
@@ -322,7 +359,6 @@ export default function LiveMonitorPage() {
                     <span className="text-xs font-bold text-teal-700 mt-0.5">LIVE</span>
                   </div>
                 </div>
-                {/* Mic device */}
                 {micDevice !== 'unknown' && (
                   <span className={`inline-flex items-center gap-1 text-xs font-semibold px-2 py-0.5 rounded-full ${
                     micDevice === 'external' ? 'bg-purple-100 text-purple-700' : 'bg-blue-100 text-blue-700'
@@ -332,7 +368,6 @@ export default function LiveMonitorPage() {
                     {micLabel ? ` — ${micLabel.slice(0, 40)}` : ''}
                   </span>
                 )}
-                {/* Sensitivity */}
                 <div className="mt-2">
                   <div className="flex justify-between text-xs text-slate-500 mb-0.5">
                     <span className="flex items-center gap-1"><SlidersHorizontal className="w-3 h-3" /> Sensitivity</span>
@@ -343,11 +378,6 @@ export default function LiveMonitorPage() {
                     onChange={e => { const v = Number(e.target.value); setSensitivity(v); setGain(v); }}
                     className="w-full accent-teal-500 h-1.5 cursor-pointer"
                   />
-                  {noiseLevel === 0 && isActive && (
-                    <p className="text-xs text-amber-600 font-semibold mt-1">
-                      Reading is 0 — try sliding sensitivity to the right →
-                    </p>
-                  )}
                 </div>
               </div>
             )}
@@ -397,13 +427,35 @@ export default function LiveMonitorPage() {
               </div>
             </div>
 
+            {/* Arduino CTA when not connected */}
+            {sourceTab === 'arduino' && !relayConnected && (
+              <div className="mt-5 flex flex-col items-center gap-3 p-4 rounded-xl bg-gradient-to-r from-teal-50 to-sky-50 border border-teal-100">
+                <WifiOff className="w-8 h-8 text-slate-400" />
+                <div className="text-center">
+                  <p className="font-bold text-slate-800 text-sm">Grove Sensor not connected</p>
+                  <p className="text-xs text-slate-500 mt-1">Run these commands in 2 terminals:</p>
+                </div>
+                <div className="w-full space-y-2">
+                  <div className="bg-slate-800 text-emerald-400 text-xs font-mono rounded-lg p-2.5">
+                    <p className="text-slate-400 text-[10px] mb-1">Terminal 1 — Relay server</p>
+                    npm run relay
+                  </div>
+                  <div className="bg-slate-800 text-emerald-400 text-xs font-mono rounded-lg p-2.5">
+                    <p className="text-slate-400 text-[10px] mb-1">Terminal 2 — Arduino bridge</p>
+                    npm run bridge -- --port COM3
+                  </div>
+                </div>
+                <p className="text-xs text-slate-400 text-center">Arduino firmware must be uploaded first</p>
+              </div>
+            )}
+
             {/* Mic CTA when idle */}
-            {!isActive && !simRunning && (
+            {sourceTab === 'microphone' && !isActive && !simRunning && (
               <div className="mt-5 flex flex-col sm:flex-row items-center gap-3 p-4 rounded-xl bg-gradient-to-r from-teal-50 to-sky-50 border border-teal-100">
                 <Mic className="w-8 h-8 text-teal-500" />
                 <div>
                   <p className="font-bold text-slate-800 text-sm">Start monitoring with your microphone</p>
-                  <p className="text-xs text-slate-500">Click "Start Microphone" in the panel on the right</p>
+                  <p className="text-xs text-slate-500">Click "Start Microphone" below</p>
                 </div>
                 <button
                   onClick={handleStartMic}
@@ -422,7 +474,8 @@ export default function LiveMonitorPage() {
             <div className="flex items-center justify-between mb-4">
               <div>
                 <h3 className="font-bold text-slate-800">Noise History</h3>
-                {isActive && <p className="text-xs text-teal-600 font-semibold">🎤 Recording live</p>}
+                {arduinoActive && <p className="text-xs text-teal-600 font-semibold">🔌 Grove Sensor live</p>}
+                {isActive && sourceTab === 'microphone' && <p className="text-xs text-sky-600 font-semibold">🎤 Browser mic live</p>}
                 {simRunning && <p className="text-xs text-purple-600 font-semibold">⚡ Simulation running</p>}
               </div>
               <span className="text-xs text-slate-400">{history.length} readings</span>
@@ -437,7 +490,7 @@ export default function LiveMonitorPage() {
             ) : (
               <div className="h-56 flex flex-col items-center justify-center gap-3 text-slate-300">
                 <Activity className="w-12 h-12" />
-                <p className="text-sm">Start microphone or simulation to see chart</p>
+                <p className="text-sm">Connect Grove Sensor, start mic, or run simulation</p>
               </div>
             )}
             {/* Session stats */}
@@ -465,19 +518,77 @@ export default function LiveMonitorPage() {
           {/* Source selector */}
           <div className="card">
             <h3 className="font-bold text-slate-800 mb-3 text-sm">Data Source</h3>
-            <div className="flex gap-1 bg-slate-100 p-1 rounded-xl mb-4">
+            <div className="flex flex-col gap-1 bg-slate-100 p-1 rounded-xl mb-4">
               {SOURCE_TABS.map(({ key, label, icon: Icon }) => (
                 <button
                   key={key}
                   onClick={() => switchTab(key)}
-                  className={`flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg text-sm font-bold transition-all ${
+                  className={`flex items-center gap-2 px-3 py-2.5 rounded-lg text-sm font-bold transition-all ${
                     sourceTab === key ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-500 hover:text-slate-700'
                   }`}
                 >
-                  <Icon className="w-4 h-4" /> {label}
+                  <Icon className="w-4 h-4 shrink-0" />
+                  <span className="flex-1 text-left">{label}</span>
+                  {key === 'arduino' && (
+                    relayConnected
+                      ? <span className="flex items-center gap-1 text-[10px] font-bold text-teal-600 bg-teal-50 px-1.5 py-0.5 rounded-full"><span className="w-1.5 h-1.5 rounded-full bg-teal-500 live-dot" />LIVE</span>
+                      : <span className="text-[10px] font-bold text-slate-400 bg-slate-200 px-1.5 py-0.5 rounded-full">OFF</span>
+                  )}
                 </button>
               ))}
             </div>
+
+            {/* Arduino sensor panel */}
+            {sourceTab === 'arduino' && (
+              <div className="space-y-3">
+                <div className={`flex items-start gap-2 p-3 rounded-xl border ${
+                  relayConnected
+                    ? 'bg-teal-50 border-teal-200'
+                    : 'bg-slate-50 border-slate-200'
+                }`}>
+                  {relayConnected
+                    ? <Wifi className="w-4 h-4 text-teal-500 shrink-0 mt-0.5" />
+                    : <WifiOff className="w-4 h-4 text-slate-400 shrink-0 mt-0.5" />}
+                  <div>
+                    <p className={`text-xs font-bold ${relayConnected ? 'text-teal-700' : 'text-slate-500'}`}>
+                      {relayConnected ? '🔌 Grove Sensor Connected' : 'Waiting for relay…'}
+                    </p>
+                    <p className="text-xs text-slate-400 mt-0.5">
+                      Arduino UNO → serial-bridge → relay → dashboard
+                    </p>
+                  </div>
+                </div>
+
+                <div className="bg-slate-50 border border-slate-200 rounded-xl p-3 space-y-1">
+                  <p className="text-xs font-bold text-slate-600">Wiring</p>
+                  {[
+                    ['Red',    '5V',  'Power'],
+                    ['Yellow', 'A0',  'Signal'],
+                    ['Black',  'GND', 'Ground'],
+                    ['White',  'NC',  'Not connected'],
+                  ].map(([wire, pin, desc]) => (
+                    <div key={wire} className="flex items-center gap-2 text-xs">
+                      <span className={`w-2 h-2 rounded-full shrink-0 ${
+                        wire === 'Red' ? 'bg-red-500' : wire === 'Yellow' ? 'bg-yellow-400'
+                        : wire === 'Black' ? 'bg-slate-800' : 'bg-slate-300'
+                      }`} />
+                      <span className="font-mono font-bold text-slate-700 w-12">{pin}</span>
+                      <span className="text-slate-400">{desc}</span>
+                    </div>
+                  ))}
+                </div>
+
+                <div className="bg-slate-50 border border-slate-200 rounded-xl p-3 space-y-1">
+                  <p className="text-xs font-bold text-slate-600">Commands</p>
+                  <div className="bg-slate-800 text-emerald-400 text-[11px] font-mono rounded-lg p-2">
+                    npm run relay
+                  </div>
+                  <div className="bg-slate-800 text-emerald-400 text-[11px] font-mono rounded-lg p-2">
+                    npm run bridge -- --port COM3
+                  </div>
+                </div>
+              </div>
+            )}
 
             {/* Microphone panel */}
             {sourceTab === 'microphone' && (

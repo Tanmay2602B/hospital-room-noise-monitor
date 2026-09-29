@@ -47,7 +47,7 @@ export function AppProvider({ children }) {
   // Settings
   const [settings, setSettings] = useState({
     alertDurationSeconds: 10,
-    staleDataTimeoutSeconds: 30,
+    staleDataTimeoutSeconds: 10,   // 10s — fast enough for 500ms sensor readings
     audioAlertsEnabled: false,
     simulationIntervalMs: 2000,
     saveToFirebase: true,
@@ -96,10 +96,16 @@ export function AppProvider({ children }) {
           const msg = JSON.parse(evt.data);
           if (msg.type === 'reading' && msg.payload) {
             const { locationId, noiseLevel } = msg.payload;
-            const locId = locationId?.replace('_', '_') || 'ROOM_101'; // normalize
-            ingestReadingRef.current?.(locId, Math.round(noiseLevel), msg.payload.source || 'relay');
+            // Normalize: 'Room101' / 'ROOM_101' / 'room_101' → 'ROOM_101'
+            const locId = locationId
+              ? locationId.toUpperCase().replace(/[^A-Z0-9]/g, '_')
+              : 'ROOM_101';
+            console.log('[Relay→Dashboard]', locId, noiseLevel, msg.payload.source);
+            ingestReadingRef.current?.(locId, Math.round(noiseLevel), msg.payload.source || 'arduino');
           }
-        } catch (_) {}
+        } catch (e) {
+          console.warn('[Relay] parse error', e);
+        }
       };
 
       ws.onclose = () => {
