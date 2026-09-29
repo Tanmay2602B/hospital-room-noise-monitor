@@ -9,7 +9,8 @@
     "preview": "vite preview",
     "relay": "node relay-server.js",
     "bridge": "node serial-bridge.js",
-    "bridge:list": "node serial-bridge.js --list"
+    "bridge:list": "node serial-bridge.js --list",
+    "bridge:py": "python python-bridge.py"
   },
   "dependencies": {
     "firebase": "^11.0.2",

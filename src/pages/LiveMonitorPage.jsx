@@ -208,15 +208,22 @@ export default function LiveMonitorPage() {
   const history     = readingHistory[selectedLocationId] || [];
   const stale       = secondsSince(location?.lastUpdated) > settings.staleDataTimeoutSeconds;
 
-  // Display level:
-  //   arduino tab → always use location.currentNoise (fed by relay WebSocket)
-  //   microphone tab → prefer live mic level
-  //   simulation tab → use location.currentNoise (fed by sim interval)
+  // Display level — each tab is fully isolated, no cross-contamination:
+  //   arduino tab  → relay data only (null if relay disconnected)
+  //   microphone   → mic level only (null if mic not active)
+  //   simulation   → sim data only (null if sim not running)
   const arduinoActive = sourceTab === 'arduino' && relayConnected;
-  const noiseLevel = isActive
-    ? micLevel
-    : (!stale && location?.currentNoise !== null && location?.currentNoise !== undefined
-      ? location.currentNoise : null);
+
+  const noiseLevel =
+    sourceTab === 'arduino'
+      ? (arduinoActive && !stale && location?.currentNoise !== null
+          ? location.currentNoise : null)
+    : sourceTab === 'microphone'
+      ? (isActive ? micLevel : null)
+    : sourceTab === 'simulation'
+      ? (!stale && location?.currentNoise !== null && location?.currentNoise !== undefined
+          ? location.currentNoise : null)
+    : null;
 
   const dataSource = arduinoActive ? 'arduino'
     : isActive ? 'microphone'
