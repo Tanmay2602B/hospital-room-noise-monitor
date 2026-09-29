@@ -4,6 +4,11 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import React, { createContext, useContext, useState, useEffect, useRef, useCallback } from 'react';
+
+// ── Relay WebSocket config ────────────────────────────────────────────────────
+// Connect to relay-server.js (run: npm run relay)
+// Auto-detects localhost vs LAN IP
+const RELAY_WS_URL = `ws://${window.location.hostname}:3001/ws`;
 import { DEMO_LOCATIONS, DEMO_DEVICES, generateDemoAlerts } from '../utils/demoData';
 import { generateSimulatedNoise, getNoiseStatus, generateId, formatDuration } from '../utils/noiseUtils';
 import { isFirebaseConfigured } from '../firebase/config';
@@ -27,6 +32,11 @@ export function AppProvider({ children }) {
   const [simMode, setSimMode]                 = useState(false);
   const [simScenario, setSimScenario]         = useState('random'); // 'normal'|'warning'|'critical'|'random'
   const simIntervalRef = useRef(null);
+
+  // Relay WebSocket state
+  const [relayConnected, setRelayConnected]   = useState(false);
+  const wsRef              = useRef(null);
+  const ingestReadingRef   = useRef(null);  // always points to latest ingestReading
 
   // Per-location reading history (in-memory, last 120 data points)
   const [readingHistory, setReadingHistory]   = useState({});
@@ -58,6 +68,63 @@ export function AppProvider({ children }) {
     });
 
     return () => { unsubLoc(); unsubAlerts(); unsubDevices(); };
+  }, []);
+
+  // ── Relay WebSocket connection (Arduino + Mobile → Dashboard) ─────────────
+  useEffect(() => {
+    let ws;
+    let retryTimer;
+    let dead = false;
+
+    function connect() {
+      if (dead) return;
+      try {
+        ws = new window.WebSocket(RELAY_WS_URL);
+        wsRef.current = ws;
+      } catch (_) {
+        scheduleRetry();
+        return;
+      }
+
+      ws.onopen = () => {
+        setRelayConnected(true);
+        console.info('[Relay] WebSocket connected →', RELAY_WS_URL);
+      };
+
+      ws.onmessage = (evt) => {
+        try {
+          const msg = JSON.parse(evt.data);
+          if (msg.type === 'reading' && msg.payload) {
+            const { locationId, noiseLevel } = msg.payload;
+            const locId = locationId?.replace('_', '_') || 'ROOM_101'; // normalize
+            ingestReadingRef.current?.(locId, Math.round(noiseLevel), msg.payload.source || 'relay');
+          }
+        } catch (_) {}
+      };
+
+      ws.onclose = () => {
+        setRelayConnected(false);
+        scheduleRetry();
+      };
+
+      ws.onerror = () => {
+        setRelayConnected(false);
+      };
+    }
+
+    function scheduleRetry() {
+      if (dead) return;
+      retryTimer = setTimeout(connect, 3000);
+    }
+
+    connect();
+
+    return () => {
+      dead = true;
+      clearTimeout(retryTimer);
+      ws?.close();
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // ── Derived helpers ────────────────────────────────────────────────────────
@@ -175,6 +242,9 @@ export function AppProvider({ children }) {
     }
   }, [simMode, stopSimulation, startSimulation]);
 
+  // Keep ref in sync so WebSocket closure always calls latest version
+  ingestReadingRef.current = ingestReading;
+
   // Cleanup on unmount
   useEffect(() => () => { if (simIntervalRef.current) clearInterval(simIntervalRef.current); }, []);
 
@@ -240,6 +310,7 @@ export function AppProvider({ children }) {
       settings, updateSettings,
       // Status
       usingFirebase,
+      relayConnected,
       getLocation,
     }}>
       {children}

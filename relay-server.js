@@ -136,15 +136,19 @@ function handleRequest(req, res) {
           res.end(JSON.stringify({ error: 'noiseLevel must be a number 0-100' }));
           return;
         }
+        // Log source (arduino, mobile, etc.)
+        const src = payload.source || 'unknown';
 
         // Enrich
         const reading = {
           noiseLevel:  Math.round(payload.noiseLevel),
           locationId:  payload.locationId  || 'ROOM_101',
-          deviceName:  payload.deviceName  || 'Mobile Phone',
+          deviceName:  payload.deviceName  || 'Unknown Device',
           status:      payload.status      || 'NORMAL',
           timestamp:   payload.timestamp   || new Date().toISOString(),
-          source:      'mobile',
+          source:      src,
+          rawAdc:      payload.rawAdc      || null,
+          smoothedAdc: payload.smoothedAdc || null,
         };
 
         // Broadcast to all connected dashboard tabs

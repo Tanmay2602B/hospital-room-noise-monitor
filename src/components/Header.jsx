@@ -11,7 +11,7 @@ import { useApp } from '../contexts/AppContext';
 import { useNavigate } from 'react-router-dom';
 
 export default function Header({ onMenuToggle }) {
-  const { simMode, monitoringMode, setMonitoringMode, alerts, selectedLocation, usingFirebase } = useApp();
+  const { simMode, monitoringMode, setMonitoringMode, alerts, selectedLocation, usingFirebase, relayConnected } = useApp();
   const navigate = useNavigate();
   const [time, setTime] = useState(new Date());
 
@@ -67,6 +67,21 @@ export default function Header({ onMenuToggle }) {
           <span className="text-xs font-bold text-amber-700">DEMO MODE</span>
         </div>
       )}
+
+      {/* Arduino / Relay connection badge */}
+      <div className={`hidden sm:flex items-center gap-1.5 px-2.5 py-1 rounded-full border transition-all ${
+        relayConnected
+          ? 'bg-teal-50 border-teal-200'
+          : 'bg-slate-50 border-slate-200'
+      }`}>
+        <Cpu className={`w-3 h-3 ${relayConnected ? 'text-teal-600' : 'text-slate-400'}`} />
+        <span className={`text-xs font-bold ${
+          relayConnected ? 'text-teal-700' : 'text-slate-400'
+        }`}>
+          {relayConnected ? 'ARDUINO LIVE' : 'NO RELAY'}
+        </span>
+        {relayConnected && <span className="w-1.5 h-1.5 rounded-full bg-teal-500 live-dot" />}
+      </div>
 
       {/* Spacer */}
       <div className="flex-1" />
