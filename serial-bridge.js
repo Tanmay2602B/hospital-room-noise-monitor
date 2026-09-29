@@ -28,6 +28,7 @@ const RELAY_HOST     = 'localhost';
 const RELAY_PORT     = 3001;
 const RELAY_PATH     = '/reading';
 const RECONNECT_MS   = 3000;
+const DELIMITER      = '\n';        // Works for both \n and \r\n on Windows
 
 // Raw ADC range (0-1023) → dashboard noise level (0-100)
 const ADC_MIN = 0;
@@ -150,7 +151,7 @@ async function main() {
 
   function connect() {
     const port = new SerialPort({ path: portPath, baudRate: BAUD_RATE, autoOpen: false });
-    const parser = port.pipe(new ReadlineParser({ delimiter: '\r\n' }));
+    const parser = port.pipe(new ReadlineParser({ delimiter: DELIMITER }));
 
     port.open((err) => {
       if (err) {
@@ -164,10 +165,13 @@ async function main() {
     });
 
     parser.on('data', (line) => {
-      // Print raw line for debugging
-      if (line.startsWith('DATA,')) {
-        const parsed = parseLine(line);
-        if (!parsed) return;
+      const trimmed = line.trim();
+      if (trimmed.startsWith('DATA,')) {
+        const parsed = parseLine(trimmed);
+        if (!parsed) {
+          console.warn('[bridge] Could not parse:', JSON.stringify(trimmed));
+          return;
+        }
 
         const level  = adcToLevel(parsed.smoothed);   // use smoothed ADC value
         const status = mapStatus(parsed.status);
